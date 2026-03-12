@@ -1,213 +1,261 @@
-name: Infra CI / CD Pipeline
+name: Terraform CI / CD Pipeline
+
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/build-pipeline.yaml'
+      - 'tools/kms-csr-signing-utility/src/**'
+      - 'tools/kms-csr-signing-utility/cfg/**'
+
   push:
-    branches:
-      - main
+    paths:
+      - 'terraform/**'
+      - 'scripts/*'
+      - '.github/workflows/build-pipeline.yaml'
+      - 'tools/kms-csr-signing-utility/src/**'
+      - 'tools/kms-csr-signing-utility/cfg/**'
 
-permissions:
-  contents: read
-  id-token: write
-  pull-requests: write
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Brach to run workflow on'
+        required: false
+        default: ''
+        type: string
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+      aws_region:
+        description: 'AWS Region'
+        required: false
+        default: 'us-east-1'
+        type: string
+      tf_version:
+        description: 'Terraform Version'
+        required: false
+        default: '1.10.0-1'
+        type: string
+      terraform_dir:
+        description: 'Terraform Directory'
+        required: false
+        default: 'terraform/environments/dev'
+        type: string
+      csr_output_path:
+        description: 'Path to output generated CSR file'
+        required: false
+        default: 'csr_output'
+        type: string
 
-concurrency:
-  group: infra-pipeline-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  aws_region: 'us-east-1'
+  TF_VERSION: '1.10.0-1'
+  TERRAFORM_DIR: 'terraform/dev'
+  CSR_OUTPUT_PATH: 'csr_output'
+  S3_BACKEND_BUCKET: ${{ secrets.S3_BACKEND_BUCKET }}
 
 jobs:
-  prepare:
-    name: Prepare workspace
+  security-scan:
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    outputs:
-      workspace-path: ${{ steps.set-out.outputs.workspace }}
+    permissions:
+      contents: read
+      pull_requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set workspace output
-        id: set-out
-        run: |
-          echo "::set-output name=workspace::${GITHUB_WORKSPACE}/infra/terraform/envs/prod"
-
-      - name: Make scripts executable
-        run: |
-          chmod +x ./scripts/*.sh || true
-
-  validate:
-    name: Terraform fmt & validate
-    runs-on: ubuntu-latest
-    needs: prepare
-    steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
-
-      - name: Run terraform_setup.sh
-        run: ./scripts/terraform_setup.sh "${{ github.workspace }}/infra/terraform/envs/prod"
-
-      - name: Terraform fmt (check)
+      - name: Run Checkov security scan
+        id: checkov
         run: |
-          cd infra/terraform/envs/prod
-          terraform fmt -check -diff
+          chmod +x scripts/checkov_scan.sh
+          ./scripts/checkov_scan.sh terraform/dev
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
 
-      - name: Terraform init & validate
-        run: |
-          cd infra/terraform/envs/prod
-          terraform init -input=false
-          terraform validate
-
-  plan:
-    name: Terraform plan (PR & pushes)
-    runs-on: ubuntu-latest
-    needs: [validate]
-    outputs:
-      plan-artifact: ${{ steps.upload.outputs.artifact-name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
-
-      - name: Run terraform_plan.sh
-        id: run-plan
-        run: |
-          cd infra/terraform/envs/prod
-          ./../../../../scripts/terraform_plan.sh > plan.log 2>&1 || true
-          # Ensure a plan file exists if script created one
-          if [ -f tfplan ]; then
-            terraform show -no-color tfplan > plan.txt || true
-          elif [ -f tfplan.binary ]; then
-            terraform show -no-color tfplan.binary > plan.txt || true
-          fi
-          ls -lah
-
-      - name: Upload plan & logs
-        id: upload
+      - name: Upload Checkov report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-plan-${{ github.run_id }}
-          path: |
-            infra/terraform/envs/prod/plan.txt
-            infra/terraform/envs/prod/tfplan*
-            infra/terraform/envs/prod/plan.log
+          name: checkov-security-report
+          path: ${{ github.workspace }}/checkov_report.txt
+          retention-days: 7
+          if-no-files-found: warn
 
-      - name: Comment plan summary on PR
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/github-script@6
-        with:
-          script: |
-            const fs = require('fs');
-            const path = 'infra/terraform/envs/prod/plan.txt';
-            let body = 'Terraform plan generated by workflow. See attached artifacts for full plan.';
-            if (fs.existsSync(path)) {
-              const txt = fs.readFileSync(path, 'utf8').slice(0, 12000);
-              body += `\n\n\`\`\`\n${txt}\n\`\`\``;
-            }
-            await github.rest.issues.createComment({
-              issue_number: context.payload.pull_request.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+      - name: Comment PR with checkov Results
+        if: github.event_name == 'pull_request' && always()
+        run: |
+          chmod +x scripts/comment_checkov_results.sh
+          ./scripts/comment_checkov_results.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  security_scan:
-    name: Security static scan (Checkov)
+  generate-csr:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    needs: prepare
+    permissions:
+      id-token: write
+      contents: read
+      pull_requests: write
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Node (for comment script)
-        uses: actions/setup-node@v4
+      - name: set up Java
+        uses: actions/setup-java@v3
         with:
-          node-version: '20'
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
 
-      - name: Run Checkov scanner
-        run: ./scripts/checkov-scan.sh infra/terraform/envs/prod
-
-      - name: Parse Checkov report
-        run: ./scripts/parse-checkov-report.sh infra/terraform/envs/prod
-
-      - name: Comment Checkov results (PR)
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/github-script@6
+      # Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          script: |
-            const fs = require('fs');
-            const report = 'infra/terraform/envs/prod/checkov-report.md';
-            let body = 'Checkov scan results:';
-            if (fs.existsSync(report)) {
-              body += '\n\n' + fs.readFileSync(report, 'utf8').slice(0, 12000);
-            } else {
-              body += '\n\n_No report generated._';
-            }
-            await github.rest.issues.createComment({
-              issue_number: context.payload.pull_request.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-  apply:
-    name: Terraform apply (Protected)
+      - name: Test AWS credentials
+        run: |
+          aws sts get-caller-identity
+      - name: Build KMS CSR Signing Utility
+        working-directory: tools/kms-csr-signing-utility
+        run: |
+          mvn clean && mvn compile
+
+      - name: Generate CSR using KMS CSR
+        working-directory: tools/kms-csr-signing-utility
+        run: |
+          mvn exec:java -Dexec.mainClass="com.amazonaws.kmscsr.examples.CsrCreator" -Dexec.args="{{github.workspace}}/${{ env.CSR_OUTPUT_PATH }}/document-signing-kms.csr"
+     
+      - name: Upload generated CSR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-csr
+          path: ${{ github.workspace }}/${{ env.csr_output_path }}/document-signing-kms.csr
+
+
+  terraform-plan:
+    # Run terraform plan for pull requests and terraform apply for pushes to main branch
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
-    needs: [plan, security_scan]
-    environment:
-      name: production
-    if: ${{ github.ref == 'refs/heads/main' }}
+    concurrency: terraform-state
+    permissions:
+      id-token: write
+      contents: read
+      pull_requests: write
+    needs: generate-csr
     steps:
-      - name: Checkout
+      - name: checkout code
         uses: actions/checkout@v4
 
-      - name: Download plan artifact
+      - name: Download generated CSR
         uses: actions/download-artifact@v4
         with:
-          name: terraform-plan-${{ github.run_id }}
-          path: infra/terraform/envs/prod/artifacts || true
+          name: generated-csr
+          path: ${{github.workspace}}/${{env.csr_output_path}}
+
+      - name: Verify Download CSR
+        run: |
+          ls -l ${{github.workspace}}/${{env.csr_output_path}}
+          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+
+      ## Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Test AWS credentials
+        run: |
+          aws sts get-caller-identity
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
-
-      - name: Run terraform_apply.sh (uses protected env approval)
-        env:
-          TF_VAR_example: ${{ secrets.TF_VAR_EXAMPLE }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          set -euo pipefail
-          cd infra/terraform/envs/prod
-          # If a plan file exists, apply it. Otherwise fall back to a fresh apply.
-          if [ -f tfplan ] || [ -f tfplan.binary ] || [ -d artifacts ]; then
-            if [ -f tfplan ]; then
-              ./../../../../scripts/terraform_apply.sh tfplan
-            elif [ -f tfplan.binary ]; then
-              ./../../../../scripts/terraform_apply.sh tfplan.binary
-            else
-              # attempt to find uploaded plan
-              for f in artifacts/*; do
-                if [[ $f == *tfplan* ]]; then
-                  ./../../../../scripts/terraform_apply.sh "$f"
-                  exit 0
-                fi
-              done
-              echo "No plan found, running terraform apply (plan will be recreated)."
-              ./../../../../scripts/terraform_apply.sh
-            fi
-          else
-            echo "No plan artifact found — running terraform apply directly"
-            ./../../../../scripts/terraform_apply.sh
-          fi
+          chmod +x scripts/terraform_setup.sh
+          ./scripts/terraform_setup.sh
+        env:
+          TF_VERSION: ${{ env.TF_VERSION }}
+
+      - name: terraform plan
+        run: |
+          chmod +x scripts/terraform_plan.sh
+          ./scripts/terraform_plan.sh
+        env:
+          TERRAFORM_DIR: ${{ env.TERRAFORM_DIR }}
+
+      - name: upload plan artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: ${{env.TERRAFORM_DIR}}/terraform-plan.log
+          retention-days: 1
+
+  terraform-apply:
+    if : (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    concurrency: terraform-state
+    permissions:
+      id-token: write
+      contents: read
+    needs: generate-csr
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: Download generated CSR
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-csr
+          path: ${{github.workspace}}/${{env.csr_output_path}}
+
+      - name: Verify Download CSR
+        run: |
+          ls -l ${{github.workspace}}/${{env.csr_output_path}}
+          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+
+      ## Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Test AWS credentials
+        run: |
+          aws sts get-caller-identity
+
+      - name: Setup Terraform
+        run: |
+          chmod +x scripts/terraform_setup.sh
+          ./scripts/terraform_setup.sh
+        env:
+          TF_VERSION: ${{ env.TF_VERSION }}
+
+      - name: terraform apply
+        run: |
+          chmod +x scripts/terraform_apply.sh
+          ./scripts/terraform_apply.sh
+        env:
+          TERRAFORM_DIR: ${{ env.TERRAFORM_DIR }}
+      
+      - name: upload apply log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-apply-logs
+          path: ${{env.TERRAFORM_DIR}}/terraform-apply.log
+          retention-days: 30
