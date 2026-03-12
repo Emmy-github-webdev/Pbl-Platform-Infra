@@ -57,7 +57,7 @@ env:
   aws_region: 'us-east-1'
   TF_VERSION: '1.10.0-1'
   TERRAFORM_DIR: 'terraform/dev'
-  CSR_OUTPUT_PATH: 'csr_output'
+  csr_output_path: 'csr_output'
   S3_BACKEND_BUCKET: ${{ secrets.S3_BACKEND_BUCKET }}
 
 jobs:
@@ -134,7 +134,7 @@ jobs:
       - name: Generate CSR using KMS CSR
         working-directory: tools/kms-csr-signing-utility
         run: |
-          mvn exec:java -Dexec.mainClass="com.amazonaws.kmscsr.examples.CsrCreator" -Dexec.args="{{github.workspace}}/${{ env.CSR_OUTPUT_PATH }}/document-signing-kms.csr"
+          mvn exec:java -Dexec.mainClass="com.amazonaws.kmscsr.examples.CsrCreator" -Dexec.args="{{github.workspace}}/${{ env.csr_output_path }}/document-signing-kms.csr"
      
       - name: Upload generated CSR
         if: always()
