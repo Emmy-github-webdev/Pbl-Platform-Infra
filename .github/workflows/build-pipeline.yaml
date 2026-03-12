@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull_requests: write
+      pull_request: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -104,7 +104,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      pull_requests: write
+      pull_request: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -152,7 +152,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      pull_requests: write
+      pull_request: write
     needs: generate-csr
     steps:
       - name: checkout code
