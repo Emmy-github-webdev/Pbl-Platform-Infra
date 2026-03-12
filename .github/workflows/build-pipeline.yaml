@@ -54,7 +54,7 @@ on:
         type: string
 
 env:
-  aws_region: 'us-east-1'
+  AWS_REGION: 'us-east-1'
   TF_VERSION: '1.10.0-1'
   TERRAFORM_DIR: 'terraform/dev'
   csr_output_path: 'csr_output'
