@@ -259,3 +259,4 @@ jobs:
           name: terraform-apply-logs
           path: ${{env.TERRAFORM_DIR}}/terraform-apply.log
           retention-days: 30
+          
