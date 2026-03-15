@@ -189,7 +189,7 @@ jobs:
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
 
-if [ "${{ inputs.action }}" == "apply" ]; then
+            if [ "${{ inputs.action }}" == "apply" ]; then
 
               echo "TERRAFORM_DIR=${{ inputs.terraform_dir }}" >> $GITHUB_ENV
 
@@ -197,9 +197,9 @@ if [ "${{ inputs.action }}" == "apply" ]; then
 
               echo "Action is not apply, skipping terraform apply"
 
-        exit 0
+              exit 0
 
-      fi
+            fi
 
           fi
 
