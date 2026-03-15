@@ -45,7 +45,7 @@ on:
       terraform_dir:
         description: 'Terraform Directory'
         required: false
-        default: 'terraform/environments/dev'
+        default: 'terraform/envs/dev'
         type: string
       csr_output_path:
         description: 'Path to output generated CSR file'
@@ -56,8 +56,6 @@ on:
 env:
   AWS_REGION: 'us-east-1'
   TF_VERSION: '1.10.0-1'
-  TERRAFORM_DIR: 'terraform/dev'
-  csr_output_path: 'csr_output'
   S3_BACKEND_BUCKET: ${{ secrets.S3_BACKEND_BUCKET }}
 
 jobs:
@@ -98,77 +96,44 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  generate-csr:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      pull_request: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'maven'
-
-      # Configure AWS credentials using OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Test AWS credentials
-        run: |
-          aws sts get-caller-identity
-      - name: Build KMS CSR Signing Utility
-        working-directory: tools/kms-csr-signing-utility
-        run: |
-          mvn clean && mvn compile
-
-      - name: Generate CSR using KMS CSR
-        working-directory: tools/kms-csr-signing-utility
-        run: |
-          mvn exec:java -Dexec.mainClass="com.amazonaws.kmscsr.examples.CsrCreator" -Dexec.args="{{github.workspace}}/${{ env.csr_output_path }}/document-signing-kms.csr"
-     
-      - name: Upload generated CSR
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{ github.workspace }}/${{ env.csr_output_path }}/document-signing-kms.csr
 
 
   terraform-plan:
-    # Run terraform plan for pull requests and terraform apply for pushes to main branch
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    # Run terraform plan for pull requests
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
       id-token: write
       contents: read
       pull_request: write
-    needs: generate-csr
     steps:
       - name: checkout code
         uses: actions/checkout@v4
 
-      - name: Download generated CSR
-        uses: actions/download-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{github.workspace}}/${{env.csr_output_path}}
-
-      - name: Verify Download CSR
+      - name: Set Terraform Directory
         run: |
-          ls -l ${{github.workspace}}/${{env.csr_output_path}}
-          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
-          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            case "${{ github.base_ref }}" in
+              "develop")
+                echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+                ;;
+              "staging")
+                echo "TERRAFORM_DIR=terraform/envs/staging" >> $GITHUB_ENV
+                ;;
+              "main")
+                echo "TERRAFORM_DIR=terraform/envs/prod" >> $GITHUB_ENV
+                ;;
+              *)
+                echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+                ;;
+            esac
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "TERRAFORM_DIR=${{ inputs.terraform_dir }}" >> $GITHUB_ENV
+          else
+            echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+          fi
 
       ## Configure AWS credentials using OIDC
       - name: Configure AWS credentials
@@ -204,28 +169,60 @@ jobs:
           retention-days: 1
 
   terraform-apply:
-    if : (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
       id-token: write
       contents: read
-    needs: generate-csr
     steps:
       - name: checkout code
         uses: actions/checkout@v4
 
-      - name: Download generated CSR
-        uses: actions/download-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{github.workspace}}/${{env.csr_output_path}}
-
-      - name: Verify Download CSR
+      - name: Set Terraform Directory
         run: |
-          ls -l ${{github.workspace}}/${{env.csr_output_path}}
-          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
-          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+
+          if [ "${{ github.event_name }}" == "push" ]; then
+
+            case "${{ github.ref }}" in
+
+              "refs/heads/develop")
+
+                echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+
+                ;;
+
+              "refs/heads/staging")
+
+                echo "TERRAFORM_DIR=terraform/envs/staging" >> $GITHUB_ENV
+
+                ;;
+
+              "refs/heads/main")
+
+                echo "TERRAFORM_DIR=terraform/envs/prod" >> $GITHUB_ENV
+
+                ;;
+
+              *)
+
+                echo "Unsupported branch for apply"
+
+                exit 1
+
+                ;;
+
+            esac
+
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+
+            echo "TERRAFORM_DIR=${{ inputs.terraform_dir }}" >> $GITHUB_ENV
+
+          else
+
+            echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+
+          fi
 
       ## Configure AWS credentials using OIDC
       - name: Configure AWS credentials
@@ -259,4 +256,3 @@ jobs:
           name: terraform-apply-logs
           path: ${{env.TERRAFORM_DIR}}/terraform-apply.log
           retention-days: 30
-          
