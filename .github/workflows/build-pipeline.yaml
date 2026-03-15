@@ -74,7 +74,7 @@ jobs:
 
   terraform-plan:
     # Run terraform plan for pull requests
-    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'plan') }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
@@ -142,7 +142,7 @@ jobs:
           retention-days: 1
 
   terraform-apply:
-    if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')) || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
@@ -189,11 +189,17 @@ jobs:
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
 
-            echo "TERRAFORM_DIR=${{ inputs.terraform_dir }}" >> $GITHUB_ENV
+if [ "${{ inputs.action }}" == "apply" ]; then
 
-          else
+              echo "TERRAFORM_DIR=${{ inputs.terraform_dir }}" >> $GITHUB_ENV
 
-            echo "TERRAFORM_DIR=terraform/envs/dev" >> $GITHUB_ENV
+            else
+
+              echo "Action is not apply, skipping terraform apply"
+
+        exit 0
+
+      fi
 
           fi
 
