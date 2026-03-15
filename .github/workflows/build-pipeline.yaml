@@ -6,51 +6,24 @@ on:
     paths:
       - 'terraform/**'
       - '.github/workflows/build-pipeline.yaml'
-      - 'tools/kms-csr-signing-utility/src/**'
-      - 'tools/kms-csr-signing-utility/cfg/**'
 
   push:
     paths:
       - 'terraform/**'
       - 'scripts/*'
       - '.github/workflows/build-pipeline.yaml'
-      - 'tools/kms-csr-signing-utility/src/**'
-      - 'tools/kms-csr-signing-utility/cfg/**'
 
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Brach to run workflow on'
-        required: false
-        default: ''
-        type: string
       action:
         description: 'Action to perform'
         required: true
         default: 'plan'
-        type: choice
-        options:
-          - plan
-          - apply
-      aws_region:
-        description: 'AWS Region'
-        required: false
-        default: 'us-east-1'
-        type: string
-      tf_version:
-        description: 'Terraform Version'
-        required: false
-        default: '1.10.0-1'
         type: string
       terraform_dir:
         description: 'Terraform Directory'
         required: false
         default: 'terraform/envs/dev'
-        type: string
-      csr_output_path:
-        description: 'Path to output generated CSR file'
-        required: false
-        default: 'csr_output'
         type: string
 
 env:
@@ -101,7 +74,7 @@ jobs:
 
   terraform-plan:
     # Run terraform plan for pull requests
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'plan')
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
@@ -169,7 +142,7 @@ jobs:
           retention-days: 1
 
   terraform-apply:
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')) || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging')) || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
     runs-on: ubuntu-latest
     concurrency: terraform-state
     permissions:
