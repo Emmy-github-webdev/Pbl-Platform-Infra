@@ -3,9 +3,6 @@ name: Terraform CI / CD Pipeline
 
 on:
   pull_request:
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/build-pipeline.yaml'
 
   push:
     paths:
