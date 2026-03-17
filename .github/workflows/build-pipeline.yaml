@@ -37,6 +37,11 @@ jobs:
           echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
         fi
 
+    - name: Debug OIDC availability
+      run: |
+        echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
+        echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+        
     # AWS OIDC login
     - uses: aws-actions/configure-aws-credentials@v4
       with:
