@@ -35,13 +35,13 @@ jobs:
         echo "Detected branch: $TARGET"
 
         if [[ "$TARGET" == "develop" ]]; then
-          echo "dir=environments/dev" >> $GITHUB_OUTPUT
+          echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
         elif [[ "$TARGET" == "staging" ]]; then
-          echo "dir=environments/staging" >> $GITHUB_OUTPUT
+          echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
         elif [[ "$TARGET" == "main" ]]; then
-          echo "dir=environments/prod" >> $GITHUB_OUTPUT
+          echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
         else
           echo "❌ Unknown branch: $TARGET"
