@@ -16,9 +16,7 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-
   terraform:
-
     runs-on: ubuntu-latest
 
     strategy:
@@ -30,140 +28,138 @@ jobs:
 
     steps:
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # DEBUG STEP
-    - name: Debug context
-      run: |
-        echo "Repo: $GITHUB_REPOSITORY"
-        echo "Ref: $GITHUB_REF"
+      # Debug GitHub context
+      - name: Debug context
+        run: |
+          echo "Repo: $GITHUB_REPOSITORY"
+          echo "Ref: $GITHUB_REF"
+          echo "Event: $GITHUB_EVENT_NAME"
 
-    # Detect correct branch→environment
-    - name: Skip unrelated environments
-      id: filter
-      run: |
-        if [[ "${GITHUB_REF}" == "refs/heads/develop" && "${{ matrix.env }}" != "dev" ]]; then exit 0; fi
-        if [[ "${GITHUB_REF}" == "refs/heads/staging" && "${{ matrix.env }}" != "staging" ]]; then exit 0; fi
-        if [[ "${GITHUB_REF}" == "refs/heads/main" && "${{ matrix.env }}" != "prod" ]]; then exit 0; fi
+      # Detect correct branch → environment
+      - name: Skip unrelated environments
+        id: filter
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/develop" && "${{ matrix.env }}" != "dev" ]]; then exit 0; fi
+          if [[ "${GITHUB_REF}" == "refs/heads/staging" && "${{ matrix.env }}" != "staging" ]]; then exit 0; fi
+          if [[ "${GITHUB_REF}" == "refs/heads/main" && "${{ matrix.env }}" != "prod" ]]; then exit 0; fi
 
-      run: |
-        echo "Repo: $GITHUB_REPOSITORY"
-        echo "Ref: $GITHUB_REF"
+      # Select AWS role for each environment
+      - name: Select AWS Role
+        id: role
+        run: |
+          if [[ "${{ matrix.env }}" == "dev" ]]; then
+            echo "ROLE=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ matrix.env }}" == "staging" ]]; then
+            echo "ROLE=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+          else
+            echo "ROLE=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+          fi
 
-        # Select AWS role for each account
-        - name: Select AWS Role
-          id: role
-          run: |
-            if [[ "${{ matrix.env }}" == "dev" ]]; then
-              echo "ROLE=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
-            elif [[ "${{ matrix.env }}" == "staging" ]]; then
-              echo "ROLE=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
-            else
-              echo "ROLE=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
-            fi
+      # AWS OIDC Login
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.role.outputs.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
 
-        # AWS OIDC login
-        - name: Configure AWS Credentials
-          uses: aws-actions/configure-aws-credentials@v4
-          with:
-            role-to-assume: ${{ steps.role.outputs.ROLE }}
-            aws-region: ${{ env.AWS_REGION }}
+      # Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
 
-        # Setup Terraform
-        - name: Setup Terraform
-          uses: hashicorp/setup-terraform@v3
-          with:
-            terraform_version: ${{ env.TF_VERSION }}
+      # Verify Terraform state lock (DynamoDB)
+      - name: Verify state locking
+        run: |
+          echo "Checking Terraform DynamoDB lock table..."
+          aws dynamodb describe-table --table-name terraform-locks >/dev/null
+          echo "State locking table exists ✔"
 
-        # Verify Terraform state lock (DynamoDB)
-        - name: Verify state locking
-          run: |
-            echo "Checking Terraform DynamoDB lock table..."
-            aws dynamodb describe-table --table-name terraform-locks >/dev/null
-            echo "State locking table exists ✔"
+      # Terraform Init
+      - name: Terraform Init
+        run: terraform init
+        working-directory: environments/${{ matrix.env }}
 
-        # Terraform Init
-        - name: Terraform Init
-          run: terraform init
-          working-directory: environments/${{ matrix.env }}
+      # Terraform Format
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
 
-        # Terraform Format
-        - name: Terraform Format Check
-          run: terraform fmt -check -recursive
+      # Terraform Validate
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: environments/${{ matrix.env }}
 
-        # Terraform Validate
-        - name: Terraform Validate
-          run: terraform validate
-          working-directory: environments/${{ matrix.env }}
+      # Security Scan
+      - name: Security Scan
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
 
-        # Security Scan (Checkov)
-        - name: Security Scan
-          id: checkov
-          uses: bridgecrewio/checkov-action@v12
-          with:
-            directory: .
-            framework: terraform
+      # Drift Detection
+      - name: Drift Detection
+        id: drift
+        run: |
+          terraform plan -detailed-exitcode -no-color > drift.txt || EXIT=$?
+          if [ "$EXIT" == "2" ]; then
+            echo "DRIFT=true" >> $GITHUB_ENV
+          else
+            echo "DRIFT=false" >> $GITHUB_ENV
+          fi
+        working-directory: environments/${{ matrix.env }}
 
-        # Drift Detection
-        - name: Drift Detection
-          id: drift
-          run: |
-            terraform plan -detailed-exitcode -no-color > drift.txt || EXIT=$?
-            if [ "$EXIT" == "2" ]; then
-              echo "DRIFT=true" >> $GITHUB_ENV
-            else
-              echo "DRIFT=false" >> $GITHUB_ENV
-            fi
-          working-directory: environments/${{ matrix.env }}
+      # Terraform Plan
+      - name: Terraform Plan
+        id: plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color > plan.txt
+        working-directory: environments/${{ matrix.env }}
 
-        # Terraform Plan
-        - name: Terraform Plan
-          id: plan
-          if: github.event_name == 'pull_request'
-          run: terraform plan -no-color > plan.txt
-          working-directory: environments/${{ matrix.env }}
+      # Cost Estimation
+      - name: Infracost
+        if: github.event_name == 'pull_request'
+        uses: infracost/infracost-gh-action@master
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          path: environments/${{ matrix.env }}
 
-        # Cost estimation
-        - name: Infracost
-          if: github.event_name == 'pull_request'
-          uses: infracost/infracost-gh-action@master
-          with:
-            api-key: ${{ secrets.INFRACOST_API_KEY }}
-            path: environments/${{ matrix.env }}
+      # Comment Plan on PR
+      - name: Comment Plan
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: environments/${{ matrix.env }}/plan.txt
 
-        # Comment Terraform Plan on PR
-        - name: Comment Plan
-          if: github.event_name == 'pull_request'
-          uses: marocchino/sticky-pull-request-comment@v2
-          with:
-            path: environments/${{ matrix.env }}/plan.txt
+      # Automatic module version tagging
+      - name: Tag Terraform Modules
+        if: github.event_name == 'push' && matrix.env == 'prod'
+        run: |
+          VERSION=$(date +'%Y.%m.%d.%H%M')
+          git tag "modules-v$VERSION"
+          git push origin "modules-v$VERSION"
 
-        # Automatic module version tagging
-        - name: Tag Terraform Modules
-          if: github.event_name == 'push' && matrix.env == 'prod'
-          run: |
-            VERSION=$(date +'%Y.%m.%d.%H%M')
-            git tag "modules-v$VERSION"
-            git push origin "modules-v$VERSION"
+      # Terraform Apply
+      - name: Terraform Apply
+        if: github.event_name == 'push'
+        run: terraform apply -auto-approve
+        working-directory: environments/${{ matrix.env }}
 
-        # Terraform Apply
-        - name: Terraform Apply
-          if: github.event_name == 'push'
-          run: terraform apply -auto-approve
-          working-directory: environments/${{ matrix.env }}
+      # Pipeline Summary
+      - name: Pipeline Summary
+        if: always()
+        run: |
+          echo "------ Pipeline Statistics ------"
+          echo "Environment: ${{ matrix.env }}"
+          echo ""
+          echo "✔ PASS  : Terraform validation successful"
+          echo "⚠ IGNORE: Optional checks skipped"
 
-        # Colored summary statistics
-        - name: Pipeline Summary
-          if: always()
-          run: |
-            echo "------ Pipeline Statistics ------"
-            echo "Environment: ${{ matrix.env }}"
-            echo ""
-            echo "✔ PASS  : Terraform validation successful"
-            echo "⚠ IGNORE: Optional checks skipped"
-            if [[ "$DRIFT" == "true" ]]; then
-              echo "❌ FAIL : Infrastructure drift detected"
-            else
-              echo "✔ PASS  : No drift detected"
-            fi
+          if [[ "$DRIFT" == "true" ]]; then
+            echo "❌ FAIL : Infrastructure drift detected"
+          else
+            echo "✔ PASS  : No drift detected"
+          fi
