@@ -32,13 +32,6 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v4
-    
-    # DEBUG STEP
-    - name: Debug context
-      run: |
-        echo "Repository: $GITHUB_REPOSITORY"
-        echo "Branch Ref: $GITHUB_REF"
-        echo "Event Name: $GITHUB_EVENT_NAME"
 
     # Detect correct branch→environment
     - name: Skip unrelated environments
