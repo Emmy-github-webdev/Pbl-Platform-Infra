@@ -26,15 +26,26 @@ jobs:
     - name: Set environment
       id: env
       run: |
-        if [[ "${GITHUB_REF}" == "refs/heads/develop" || "${{ github.base_ref }}" == "develop" ]]; then
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          TARGET="${{ github.base_ref }}"
+        else
+          TARGET="${GITHUB_REF##*/}"
+        fi
+
+        echo "Detected branch: $TARGET"
+
+        if [[ "$TARGET" == "develop" ]]; then
           echo "dir=environments/dev" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
-        elif [[ "${GITHUB_REF}" == "refs/heads/staging" || "${{ github.base_ref }}" == "staging" ]]; then
+        elif [[ "$TARGET" == "staging" ]]; then
           echo "dir=environments/staging" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
-        else
+        elif [[ "$TARGET" == "main" ]]; then
           echo "dir=environments/prod" >> $GITHUB_OUTPUT
           echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Unknown branch: $TARGET"
+          exit 1
         fi
 
     - name: Debug OIDC availability
