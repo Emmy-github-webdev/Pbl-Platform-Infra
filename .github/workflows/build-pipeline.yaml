@@ -41,7 +41,12 @@ jobs:
       run: |
         echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
         echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
-        
+
+    - name: Debug role
+      run: |
+        echo "ROLE=${{ steps.env.outputs.role }}"
+
+
     # AWS OIDC login
     - uses: aws-actions/configure-aws-credentials@v4
       with:
