@@ -21,7 +21,10 @@ jobs:
 
     runs-on: ubuntu-latest
 
-
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, staging, prod]
 
     environment: ${{ matrix.env }}
 
@@ -37,6 +40,12 @@ jobs:
         if [[ "${GITHUB_REF}" == "refs/heads/develop" && "${{ matrix.env }}" != "dev" ]]; then exit 0; fi
         if [[ "${GITHUB_REF}" == "refs/heads/staging" && "${{ matrix.env }}" != "staging" ]]; then exit 0; fi
         if [[ "${GITHUB_REF}" == "refs/heads/main" && "${{ matrix.env }}" != "prod" ]]; then exit 0; fi
+
+    # debugging context
+    - name: Debug context
+  run: |
+    echo "Repo: $GITHUB_REPOSITORY"
+    echo "Ref: $GITHUB_REF"
 
     # Select AWS role for each account
     - name: Select AWS Role
