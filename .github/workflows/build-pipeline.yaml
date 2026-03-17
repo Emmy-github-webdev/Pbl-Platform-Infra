@@ -163,4 +163,3 @@ jobs:
           else
             echo "✔ PASS  : No drift detected"
           fi
-          
