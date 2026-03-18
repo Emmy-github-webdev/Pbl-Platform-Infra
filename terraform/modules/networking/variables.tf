@@ -10,7 +10,6 @@ variable "vpc_name" {
 variable "tags" {
   description = "Global resources"
   type = string
-  default = {}
 }
 variable "vpc_cidr" {
   description = "The network VPC"
