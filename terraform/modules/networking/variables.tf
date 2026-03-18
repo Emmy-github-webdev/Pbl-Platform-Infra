@@ -9,7 +9,8 @@ variable "vpc_name" {
 
 variable "tags" {
   description = "Global resources"
-  type        = string
+  type        = map(string)
+  default     = {}
 }
 
 variable "vpc_cidr" {
