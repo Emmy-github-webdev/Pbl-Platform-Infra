@@ -1,3 +1,4 @@
+# Tag module
 module "tags" {
   source       = "../../modules/terraform-tags"
   project_name = var.project
@@ -5,6 +6,7 @@ module "tags" {
   region_name  = var.region
 }
 
+# Network module
 module "vpc" {
   vpc_name = "${var.project}-${var.environment}-vpc"
   vpc_cidr = "10.0.0.0/16"
