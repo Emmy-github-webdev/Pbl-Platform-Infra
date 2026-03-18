@@ -3,18 +3,18 @@
 # }
 
 variable "vpc_name" {
-  type = string
+  type        = string
   description = "VPC name"
 }
 
 variable "tags" {
   description = "Global resources"
-  type = string
+  type        = string
 }
 
 variable "vpc_cidr" {
   description = "The network VPC"
-  type = string
+  type        = string
 }
 
 variable "azs" {
