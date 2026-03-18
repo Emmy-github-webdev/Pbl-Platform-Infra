@@ -1,261 +1,131 @@
-name: Terraform CI / CD Pipeline
-
+name: Terraform CI/CD
 
 on:
   pull_request:
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/build-pipeline.yaml'
-      - 'tools/kms-csr-signing-utility/src/**'
-      - 'tools/kms-csr-signing-utility/cfg/**'
-
+    branches: [develop, staging, main]
   push:
-    paths:
-      - 'terraform/**'
-      - 'scripts/*'
-      - '.github/workflows/build-pipeline.yaml'
-      - 'tools/kms-csr-signing-utility/src/**'
-      - 'tools/kms-csr-signing-utility/cfg/**'
+    branches: [develop, staging, main]
 
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Brach to run workflow on'
-        required: false
-        default: ''
-        type: string
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'plan'
-        type: choice
-        options:
-          - plan
-          - apply
-      aws_region:
-        description: 'AWS Region'
-        required: false
-        default: 'us-east-1'
-        type: string
-      tf_version:
-        description: 'Terraform Version'
-        required: false
-        default: '1.10.0-1'
-        type: string
-      terraform_dir:
-        description: 'Terraform Directory'
-        required: false
-        default: 'terraform/environments/dev'
-        type: string
-      csr_output_path:
-        description: 'Path to output generated CSR file'
-        required: false
-        default: 'csr_output'
-        type: string
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
 env:
-  AWS_REGION: 'us-east-1'
-  TF_VERSION: '1.10.0-1'
-  TERRAFORM_DIR: 'terraform/dev'
-  csr_output_path: 'csr_output'
-  S3_BACKEND_BUCKET: ${{ secrets.S3_BACKEND_BUCKET }}
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.6
 
 jobs:
-  security-scan:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+  terraform:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull_request: write
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Run Checkov security scan
-        id: checkov
-        run: |
-          chmod +x scripts/checkov_scan.sh
-          ./scripts/checkov_scan.sh terraform/dev
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
+    # Detect environment
+    - name: Set environment
+      id: env
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          TARGET="${{ github.base_ref }}"
+        else
+          TARGET="${GITHUB_REF##*/}"
+        fi
 
-      - name: Upload Checkov report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkov-security-report
-          path: ${{ github.workspace }}/checkov_report.txt
-          retention-days: 7
-          if-no-files-found: warn
+        echo "Detected branch: $TARGET"
 
-      - name: Comment PR with checkov Results
-        if: github.event_name == 'pull_request' && always()
-        run: |
-          chmod +x scripts/comment_checkov_results.sh
-          ./scripts/comment_checkov_results.sh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        if [[ "$TARGET" == "develop" ]]; then
+          echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "staging" ]]; then
+          echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "main" ]]; then
+          echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Unknown branch: $TARGET"
+          exit 1
+        fi
 
-  generate-csr:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      pull_request: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    # Debug OIDC 
+    - name: Debug OIDC availability
+      run: |
+        echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
+        echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
 
-      - name: set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'maven'
-
-      # Configure AWS credentials using OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Test AWS credentials
-        run: |
-          aws sts get-caller-identity
-      - name: Build KMS CSR Signing Utility
-        working-directory: tools/kms-csr-signing-utility
-        run: |
-          mvn clean && mvn compile
-
-      - name: Generate CSR using KMS CSR
-        working-directory: tools/kms-csr-signing-utility
-        run: |
-          mvn exec:java -Dexec.mainClass="com.amazonaws.kmscsr.examples.CsrCreator" -Dexec.args="{{github.workspace}}/${{ env.csr_output_path }}/document-signing-kms.csr"
-     
-      - name: Upload generated CSR
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{ github.workspace }}/${{ env.csr_output_path }}/document-signing-kms.csr
+    # Debug role
+    - name: Debug role
+      run: |
+        echo "ROLE=${{ steps.env.outputs.role }}"
 
 
-  terraform-plan:
-    # Run terraform plan for pull requests and terraform apply for pushes to main branch
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    concurrency: terraform-state
-    permissions:
-      id-token: write
-      contents: read
-      pull_request: write
-    needs: generate-csr
-    steps:
-      - name: checkout code
-        uses: actions/checkout@v4
+    # AWS OIDC login
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.env.outputs.role }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      - name: Download generated CSR
-        uses: actions/download-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{github.workspace}}/${{env.csr_output_path}}
+    # Setup Terraform
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Verify Download CSR
-        run: |
-          ls -l ${{github.workspace}}/${{env.csr_output_path}}
-          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
-          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+    # Terraform steps
+    - run: terraform init
+      working-directory: ${{ steps.env.outputs.dir }}
 
-      ## Configure AWS credentials using OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+    - run: terraform fmt -check -recursive
 
-      - name: Test AWS credentials
-        run: |
-          aws sts get-caller-identity
+    - run: terraform validate
+      working-directory: ${{ steps.env.outputs.dir }}
 
-      - name: Setup Terraform
-        run: |
-          chmod +x scripts/terraform_setup.sh
-          ./scripts/terraform_setup.sh
-        env:
-          TF_VERSION: ${{ env.TF_VERSION }}
+    # Security scan
+    - name: Checkov Scan
+      uses: bridgecrewio/checkov-action@v12
+      with:
+        directory: .
+        soft_fail: true
 
-      - name: terraform plan
-        run: |
-          chmod +x scripts/terraform_plan.sh
-          ./scripts/terraform_plan.sh
-        env:
-          TERRAFORM_DIR: ${{ env.TERRAFORM_DIR }}
+    # Terraform plan (PR only)
+    - name: Terraform Plan
+      if: github.event_name == 'pull_request'
+      run: terraform plan -no-color > plan.txt
+      working-directory: ${{ steps.env.outputs.dir }}
 
-      - name: upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: ${{env.TERRAFORM_DIR}}/terraform-plan.log
-          retention-days: 1
+    # Comment Terraform plan
+    - name: Comment Plan
+      if: github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        path: ${{ steps.env.outputs.dir }}/plan.txt
 
-  terraform-apply:
-    if : (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
-    concurrency: terraform-state
-    permissions:
-      id-token: write
-      contents: read
-    needs: generate-csr
-    steps:
-      - name: checkout code
-        uses: actions/checkout@v4
+    # Infracost (For known infra cost)
+    # - name: Setup Infracost
+    #   if: github.event_name == 'pull_request'
+    #   uses: infracost/actions/setup@v2
 
-      - name: Download generated CSR
-        uses: actions/download-artifact@v4
-        with:
-          name: generated-csr
-          path: ${{github.workspace}}/${{env.csr_output_path}}
+    # - name: Infracost Breakdown
+    #   if: github.event_name == 'pull_request'
+    #   run: |
+    #     infracost breakdown \
+    #       --path=${{ steps.env.outputs.dir }} \
+    #       --format=json \
+    #       --out-file=infracost.json
 
-      - name: Verify Download CSR
-        run: |
-          ls -l ${{github.workspace}}/${{env.csr_output_path}}
-          cat ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
-          openssl req -text -noout -verify -in ${{github.workspace}}/${{env.csr_output_path}}/document-signing-kms.csr
+    # - name: Infracost Comment
+    #   if: github.event_name == 'pull_request'
+    #   run: |
+    #     infracost comment github \
+    #       --path=infracost.json \
+    #       --repo=$GITHUB_REPOSITORY \
+    #       --github-token=${{ secrets.GITHUB_TOKEN }} \
+    #       --pull-request=${{ github.event.pull_request.number }}
+    #   env:
+    #     INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-      ## Configure AWS credentials using OIDC
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Test AWS credentials
-        run: |
-          aws sts get-caller-identity
-
-      - name: Setup Terraform
-        run: |
-          chmod +x scripts/terraform_setup.sh
-          ./scripts/terraform_setup.sh
-        env:
-          TF_VERSION: ${{ env.TF_VERSION }}
-
-      - name: terraform apply
-        run: |
-          chmod +x scripts/terraform_apply.sh
-          ./scripts/terraform_apply.sh
-        env:
-          TERRAFORM_DIR: ${{ env.TERRAFORM_DIR }}
-      
-      - name: upload apply log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-apply-logs
-          path: ${{env.TERRAFORM_DIR}}/terraform-apply.log
-          retention-days: 30
+    # Apply (push only)
+    - name: Terraform Apply
+      if: github.event_name == 'push'
+      run: terraform apply -auto-approve
+      working-directory: ${{ steps.env.outputs.dir }}

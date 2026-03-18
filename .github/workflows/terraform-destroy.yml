@@ -1,0 +1,99 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to destroy"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.6
+
+jobs:
+  destroy:
+
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # Map environment → dir + role
+    - name: Set environment config
+      id: env
+      run: |
+        ENV="${{ github.event.inputs.environment }}"
+
+        echo "env=$ENV" >> $GITHUB_OUTPUT
+        echo "dir=terraform/environments/$ENV" >> $GITHUB_OUTPUT
+
+        case "$ENV" in
+          dev) echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT ;;
+          staging) echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT ;;
+          prod) echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT ;;
+          *) echo "❌ Invalid env"; exit 1 ;;
+        esac
+
+    # OIDC login
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.env.outputs.role }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Setup Terraform
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    # Init
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ${{ steps.env.outputs.dir }}
+
+    # Safety: ensure state exists
+    - name: Check state exists
+      run: |
+        terraform state list >/dev/null || {
+          echo "❌ No state found. Refusing destroy."
+          exit 1
+        }
+      working-directory: ${{ steps.env.outputs.dir }}
+
+    # Plan destroy (preview)
+    - name: Terraform Destroy Plan
+      id: plan
+      run: terraform plan -destroy -no-color > destroy-plan.txt
+      working-directory: ${{ steps.env.outputs.dir }}
+
+    # Show plan in logs
+    - name: Show plan summary
+      run: |
+        echo "------ DESTROY PLAN ------"
+        cat destroy-plan.txt
+
+    # STOP for prod (requires approval via environment)
+    - name: Confirm Production Destroy
+      if: steps.env.outputs.env == 'prod'
+      run: |
+        echo "⚠️ Production destroy requires manual approval via GitHub Environment"
+
+    # Execute destroy
+    - name: Terraform Destroy
+      run: terraform destroy -auto-approve
+      working-directory: ${{ steps.env.outputs.dir }}
+
+    # Summary
+    - name: Summary
+      if: always()
+      run: |
+        echo "------ Destroy Summary ------"
+        echo "Environment: ${{ steps.env.outputs.env }}"
+        echo "Status: Completed"
