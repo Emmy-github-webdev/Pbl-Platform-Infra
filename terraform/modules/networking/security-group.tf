@@ -2,7 +2,7 @@
 # Security Group
 # -------------------
 resource "aws_security_group" "pbl_sg" {
-  name        = "${var.tag.project}-${var.tag.environment}-sg"
+  name        = "${var.tags.project}-${var.tags.environment}-sg"
   description = "Baseline security group"
   vpc_id      = aws_vpc.pbl_vpc.id
 
@@ -30,6 +30,6 @@ resource "aws_security_group" "pbl_sg" {
   }
 
   tags = {
-    Name = "${var.tag.project}-${var.tag.environment}-sg"
+    Name = "${var.tags.project}-${var.tags.environment}-sg"
   }
 }

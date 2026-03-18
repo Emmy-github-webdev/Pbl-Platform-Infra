@@ -10,7 +10,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "${var.tag.project}-${var.tag.environment}-public-rt"
+    Name = "${var.tags.project}-${var.tags.environment}-public-rt"
   }
 }
 
@@ -32,7 +32,7 @@ resource "aws_route_table" "private" {
   }
 
   tags = {
-    Name = "${var.tag.project}-${var.tag.environment}-private-rt"
+    Name = "${var.tags.project}-${var.tags.environment}-private-rt"
   }
 }
 
