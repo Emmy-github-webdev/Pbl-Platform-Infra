@@ -11,6 +11,7 @@ variable "tags" {
   description = "Global resources"
   type = string
 }
+
 variable "vpc_cidr" {
   description = "The network VPC"
   type = string
