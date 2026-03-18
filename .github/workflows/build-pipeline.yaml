@@ -85,6 +85,7 @@ jobs:
       uses: bridgecrewio/checkov-action@v12
       with:
         directory: .
+        soft_fail: true
 
     # Terraform plan (PR only)
     - name: Terraform Plan

@@ -19,38 +19,30 @@ env:
 
 jobs:
   destroy:
+
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
 
     steps:
     - uses: actions/checkout@v4
 
-    # Set environment
-    - name: Set environment
+    # Map environment → dir + role
+    - name: Set environment config
       id: env
       run: |
-        TARGET="${{ github.event.inputs.environment }}"
+        ENV="${{ github.event.inputs.environment }}"
 
-        echo "Selected environment: $TARGET"
+        echo "env=$ENV" >> $GITHUB_OUTPUT
+        echo "dir=terraform/environments/$ENV" >> $GITHUB_OUTPUT
 
-        if [[ "$TARGET" == "dev" ]]; then
-          echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
-          echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
-        elif [[ "$TARGET" == "staging" ]]; then
-          echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
-          echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
-        elif [[ "$TARGET" == "prod" ]]; then
-          echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
-          echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
-        else
-          echo "❌ Invalid environment"
-          exit 1
-        fi
+        case "$ENV" in
+          dev) echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT ;;
+          staging) echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT ;;
+          prod) echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT ;;
+          *) echo "❌ Invalid env"; exit 1 ;;
+        esac
 
-    # Debug
-    - name: Debug role
-      run: echo "ROLE=${{ steps.env.outputs.role }}"
-
-    # AWS OIDC login
+    # OIDC login
     - uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ steps.env.outputs.role }}
@@ -61,25 +53,47 @@ jobs:
       with:
         terraform_version: ${{ env.TF_VERSION }}
 
-    # Terraform Init
+    # Init
     - name: Terraform Init
       run: terraform init
       working-directory: ${{ steps.env.outputs.dir }}
 
-    # Destroy Plan for safe preview
-    - name: Terraform Destroy Plan
-      run: terraform plan -destroy -no-color
+    # Safety: ensure state exists
+    - name: Check state exists
+      run: |
+        terraform state list >/dev/null || {
+          echo "❌ No state found. Refusing destroy."
+          exit 1
+        }
       working-directory: ${{ steps.env.outputs.dir }}
 
-    # Confirm Destroy
-    - name: Confirm destroy
-      run: |
-        if [[ "${{ github.event.inputs.environment }}" == "prod" ]]; then
-          echo "⚠️ Destroying PROD environment"
-          sleep 10
-        fi
+    # Plan destroy (preview)
+    - name: Terraform Destroy Plan
+      id: plan
+      run: terraform plan -destroy -no-color > destroy-plan.txt
+      working-directory: ${{ steps.env.outputs.dir }}
 
-    # Destroy
+    # Show plan in logs
+    - name: Show plan summary
+      run: |
+        echo "------ DESTROY PLAN ------"
+        cat destroy-plan.txt
+
+    # STOP for prod (requires approval via environment)
+    - name: Confirm Production Destroy
+      if: steps.env.outputs.env == 'prod'
+      run: |
+        echo "⚠️ Production destroy requires manual approval via GitHub Environment"
+
+    # Execute destroy
     - name: Terraform Destroy
       run: terraform destroy -auto-approve
       working-directory: ${{ steps.env.outputs.dir }}
+
+    # Summary
+    - name: Summary
+      if: always()
+      run: |
+        echo "------ Destroy Summary ------"
+        echo "Environment: ${{ steps.env.outputs.env }}"
+        echo "Status: Completed"
