@@ -101,9 +101,9 @@ jobs:
         path: ${{ steps.env.outputs.dir }}/plan.txt
 
     # Infracost (For known infra cost)
-    - name: Setup Infracost
-      if: github.event_name == 'pull_request'
-      uses: infracost/actions/setup@v2
+    # - name: Setup Infracost
+    #   if: github.event_name == 'pull_request'
+    #   uses: infracost/actions/setup@v2
 
     # - name: Infracost Breakdown
     #   if: github.event_name == 'pull_request'
