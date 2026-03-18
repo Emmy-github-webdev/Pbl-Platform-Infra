@@ -48,11 +48,13 @@ jobs:
           exit 1
         fi
 
+    # Debug OIDC 
     - name: Debug OIDC availability
       run: |
         echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
         echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
 
+    # Debug role
     - name: Debug role
       run: |
         echo "ROLE=${{ steps.env.outputs.role }}"
@@ -97,7 +99,7 @@ jobs:
       with:
         path: ${{ steps.env.outputs.dir }}/plan.txt
 
-    # Infracost (modern usage)
+    # Infracost (For known infra cost)
     - name: Setup Infracost
       if: github.event_name == 'pull_request'
       uses: infracost/actions/setup@v2

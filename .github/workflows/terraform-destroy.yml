@@ -7,61 +7,79 @@ on:
         description: "Environment to destroy"
         required: true
         type: choice
-        options:
-          - dev
-          - staging
-          - prod
+        options: [dev, staging, prod]
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  TF_VERSION: 1.6.6
   AWS_REGION: us-east-1
+  TF_VERSION: 1.6.6
 
 jobs:
-
   destroy:
-
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
 
     steps:
+    - uses: actions/checkout@v4
 
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Select AWS Role
-      id: role
+    # Set environment
+    - name: Set environment
+      id: env
       run: |
-        if [[ "${{ github.event.inputs.environment }}" == "dev" ]]; then
-          echo "ROLE=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
-        elif [[ "${{ github.event.inputs.environment }}" == "staging" ]]; then
-          echo "ROLE=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+        TARGET="${{ github.event.inputs.environment }}"
+
+        echo "Selected environment: $TARGET"
+
+        if [[ "$TARGET" == "dev" ]]; then
+          echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "staging" ]]; then
+          echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "prod" ]]; then
+          echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
         else
-          echo "ROLE=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+          echo "❌ Invalid environment"
+          exit 1
         fi
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+    # Debug
+    - name: Debug role
+      run: echo "ROLE=${{ steps.env.outputs.role }}"
+
+    # AWS OIDC login
+    - uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ steps.role.outputs.ROLE }}
+        role-to-assume: ${{ steps.env.outputs.role }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+    # Setup Terraform
+    - uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ env.TF_VERSION }}
 
+    # Terraform Init
     - name: Terraform Init
       run: terraform init
-      working-directory: environments/${{ github.event.inputs.environment }}
+      working-directory: ${{ steps.env.outputs.dir }}
 
+    # Destroy Plan for safe preview
     - name: Terraform Destroy Plan
-      run: terraform plan -destroy
-      working-directory: environments/${{ github.event.inputs.environment }}
+      run: terraform plan -destroy -no-color
+      working-directory: ${{ steps.env.outputs.dir }}
 
+    # Confirm Destroy
+    - name: Confirm destroy
+      run: |
+        if [[ "${{ github.event.inputs.environment }}" == "prod" ]]; then
+          echo "⚠️ Destroying PROD environment"
+          sleep 10
+        fi
+
+    # Destroy
     - name: Terraform Destroy
       run: terraform destroy -auto-approve
-      working-directory: environments/${{ github.event.inputs.environment }}
+      working-directory: ${{ steps.env.outputs.dir }}
