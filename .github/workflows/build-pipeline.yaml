@@ -43,6 +43,10 @@ jobs:
 
       - name: Detect environment
         id: env
+        env:
+          AWS_ROLE_DEV: ${{ secrets.AWS_ROLE_DEV }}
+          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
+          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             TARGET="${{ github.base_ref }}"
@@ -55,15 +59,15 @@ jobs:
           case "$TARGET" in
             develop)
               echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
-              echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
+              echo "role=$AWS_ROLE_DEV" >> $GITHUB_OUTPUT
               ;;
             staging)
               echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
-              echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+              echo "role=$AWS_ROLE_STAGING" >> $GITHUB_OUTPUT
               ;;
             main)
               echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
-              echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+              echo "role=$AWS_ROLE_PROD" >> $GITHUB_OUTPUT
               ;;
             *)
               echo "⚠️ Skipping unsupported branch"
@@ -83,11 +87,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Debug PR source
-        run: |
-          echo "event: ${{ github.event_name }}"
-          echo "is fork: ${{ github.event.pull_request.head.repo.fork }}"
           
       # Debug OIDC availability
       - name: Debug OIDC availability
