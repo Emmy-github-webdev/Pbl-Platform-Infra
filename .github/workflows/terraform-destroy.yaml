@@ -75,6 +75,11 @@ jobs:
           echo "role=$ROLE" >> $GITHUB_OUTPUT
           echo "dir=$DIR" >> $GITHUB_OUTPUT
 
+      - name: Print OIDC subject
+        run: |
+          echo "Repo: ${{ github.repository }}"
+          echo "Ref: ${{ github.ref }}"
+
       # OIDC authentication
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
