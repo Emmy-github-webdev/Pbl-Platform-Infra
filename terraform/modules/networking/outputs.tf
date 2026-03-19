@@ -11,9 +11,9 @@ output "private_subnets" {
 }
 
 output "alb_sg" {
-  value = aws_security_group.pbl_alb.id
+  value = aws_security_group.alb_sg.id
 }
 
 output "app_sg" {
-  value = aws_security_group.pbl_app.id
+  value = aws_security_group.pbl_app_sg.id
 }
