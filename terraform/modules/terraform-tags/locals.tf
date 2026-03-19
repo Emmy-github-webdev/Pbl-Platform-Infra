@@ -5,7 +5,7 @@ locals {
 }
 
 locals {
-  common-tags = {
+  common_tags = {
     environment = local.env_name
     project     = local.project_name
     region      = local.region_name

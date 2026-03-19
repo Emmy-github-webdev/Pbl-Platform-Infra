@@ -1,0 +1,146 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      confirm:
+        description: "Type DESTROY to confirm"
+        required: true
+
+# permissions
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.6.6
+
+# Prevent parallel destroys per env
+concurrency:
+  group: terraform-destroy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+
+    # Enforced GitHub Environment protections
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Validate user intent explicitly
+      - name: Validate confirmation
+        run: |
+          if [[ "${{ github.event.inputs.confirm }}" != "DESTROY" ]]; then
+            echo "❌ failed: You must type DESTROY"
+            exit 1
+          fi
+
+      # Map environment safely
+      - name: Set environment config
+        id: env
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          case "$ENV" in
+            dev)
+              ROLE="${{ secrets.AWS_ROLE_DEV }}"
+              DIR="terraform/environments/dev"
+              ;;
+            staging)
+              ROLE="${{ secrets.AWS_ROLE_STAGING }}"
+              DIR="terraform/environments/staging"
+              ;;
+            prod)
+              ROLE="${{ secrets.AWS_ROLE_PROD }}"
+              DIR="terraform/environments/prod"
+              ;;
+            *)
+              echo "❌ Invalid environment"
+              exit 1
+              ;;
+          esac
+
+          echo "env=$ENV" >> $GITHUB_OUTPUT
+          echo "role=$ROLE" >> $GITHUB_OUTPUT
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
+
+      # OIDC authentication
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.env.outputs.role }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # Init
+      - name: Terraform Init
+        working-directory: ${{ steps.env.outputs.dir }}
+        run: terraform init -input=false
+
+      # Ensure state exists before destroy
+      - name: Verify state exists
+        working-directory: ${{ steps.env.outputs.dir }}
+        run: |
+          terraform state list >/dev/null 2>&1 || {
+            echo "❌ No Terraform state found. Aborting destroy."
+            exit 1
+          }
+
+      # Plan destroy (auditable artifact)
+      - name: Terraform Destroy Plan
+        id: plan
+        working-directory: ${{ steps.env.outputs.dir }}
+        run: |
+          terraform plan -destroy -no-color -out=tfplan
+          terraform show -no-color tfplan > destroy-plan.txt
+
+      # Upload plan artifact for audit
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: destroy-plan-${{ steps.env.outputs.env }}
+          path: ${{ steps.env.outputs.dir }}/destroy-plan.txt
+
+      # Log plan summary
+      - name: Show plan summary
+        run: |
+          echo "------ DESTROY PLAN ------"
+          cat ${{ steps.env.outputs.dir }}/destroy-plan.txt
+
+      # Extra guard for production
+      - name: Production safety gate
+        if: steps.env.outputs.env == 'prod'
+        run: |
+          echo "⚠️ Production destroy requires environment approval"
+          echo "Ensure this run is approved by authorized reviewers"
+
+      # Execute destroy
+      - name: Terraform Destroy
+        working-directory: ${{ steps.env.outputs.dir }}
+        run: terraform destroy -auto-approve
+
+      # Audit summary
+      - name: Destroy Summary
+        if: always()
+        run: |
+          echo "------ DESTROY SUMMARY ------"
+          echo "Environment: ${{ steps.env.outputs.env }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Timestamp: $(date -u)"
