@@ -70,7 +70,6 @@ jobs:
               echo "skip=true" >> $GITHUB_OUTPUT
               ;;
           esac
-
   terraform:
     needs: setup
     if: needs.setup.outputs.skip != 'true'
@@ -83,10 +82,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      # Debug OIDC availability
+      - name: Debug OIDC availability
+        run: |
+          echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
+          echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+
+      # Debug role
+      - name: Debug role
+        run: |
+          echo "ROLE=${{ needs.setup.outputs.role }}"
+
+      # AWS OIDC login
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ needs.setup.outputs.role }}
           aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}
+
+      # ✅ REAL OIDC VALIDATION (keep this!)
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
 
       - uses: hashicorp/setup-terraform@v3
         with:
