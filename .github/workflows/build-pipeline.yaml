@@ -5,16 +5,6 @@ on:
     branches: [develop, staging, main]
   push:
     branches: [develop, staging, main]
-  workflow_dispatch:
-    inputs:
-      action:
-        description: "Action to run"
-        required: true
-        default: "apply"
-        type: choice
-        options:
-          - apply
-          - destroy
 
 permissions:
   id-token: write
@@ -25,140 +15,117 @@ env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.6.6
 
-concurrency:
-  group: terraform-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      dir: ${{ steps.env.outputs.dir }}
-      role: ${{ steps.env.outputs.role }}
-      skip: ${{ steps.env.outputs.skip }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Detect environment
-        id: env
-        env:
-          AWS_ROLE_DEV: ${{ secrets.AWS_ROLE_DEV }}
-          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
-          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            TARGET="${{ github.base_ref }}"
-          else
-            TARGET="${GITHUB_REF##*/}"
-          fi
-
-          echo "Detected branch: $TARGET"
-
-          case "$TARGET" in
-            develop)
-              echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
-              echo "role=$AWS_ROLE_DEV" >> $GITHUB_OUTPUT
-              ;;
-            staging)
-              echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
-              echo "role=$AWS_ROLE_STAGING" >> $GITHUB_OUTPUT
-              ;;
-            main)
-              echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
-              echo "role=$AWS_ROLE_PROD" >> $GITHUB_OUTPUT
-              ;;
-            *)
-              echo "⚠️ Skipping unsupported branch"
-              echo "skip=true" >> $GITHUB_OUTPUT
-              ;;
-          esac
-
-
   terraform:
-    needs: setup
-    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ${{ needs.setup.outputs.dir }}
-
     steps:
-      - uses: actions/checkout@v4
-          
-      # Debug OIDC availability
-      - name: Debug OIDC availability
-        run: |
-          echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
-          echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+    - uses: actions/checkout@v4
 
-      # Debug role
-      - name: Debug role values
-        run: |
-          echo "DEV role: ${AWS_ROLE_DEV:+SET}"
-          echo "STAGING role: ${AWS_ROLE_STAGING:+SET}"
-          echo "PROD role: ${AWS_ROLE_PROD:+SET}"
-        env:
-          AWS_ROLE_DEV: ${{ secrets.AWS_ROLE_DEV }}
-          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
-          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
+    # Detect environment
+    - name: Set environment
+      id: env
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          TARGET="${{ github.base_ref }}"
+        else
+          TARGET="${GITHUB_REF##*/}"
+        fi
 
-      # AWS OIDC login
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ steps.env.outputs.role }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-${{ github.run_id }}
+        echo "Detected branch: $TARGET"
 
-      # ✅ REAL OIDC VALIDATION (keep this!)
-      - name: Verify AWS Identity
-        run: aws sts get-caller-identity
+        if [[ "$TARGET" == "develop" ]]; then
+          echo "dir=terraform/environments/dev" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_DEV }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "staging" ]]; then
+          echo "dir=terraform/environments/staging" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_STAGING }}" >> $GITHUB_OUTPUT
+        elif [[ "$TARGET" == "main" ]]; then
+          echo "dir=terraform/environments/prod" >> $GITHUB_OUTPUT
+          echo "role=${{ secrets.AWS_ROLE_PROD }}" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Unknown branch: $TARGET"
+          exit 1
+        fi
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
+    # Debug OIDC 
+    - name: Debug OIDC availability
+      run: |
+        echo "TOKEN URL: $ACTIONS_ID_TOKEN_REQUEST_URL"
+        echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
 
-      - name: Terraform Init
-        run: terraform init -input=false
+    # Debug role
+    - name: Debug role
+      run: |
+        echo "ROLE=${{ steps.env.outputs.role }}"
 
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
 
-      - name: Terraform Validate
-        run: terraform validate
+    # AWS OIDC login
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.env.outputs.role }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      - name: Security Scan (Checkov)
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: .
-          soft_fail: true
+    # Setup Terraform
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
 
-      # PLAN (PR only)
-      - name: Terraform Plan
-        if: github.event_name == 'pull_request'
-        run: terraform plan -no-color -out=tfplan
+    # Terraform steps
+    - run: terraform init
+      working-directory: ${{ steps.env.outputs.dir }}
 
-      - name: Show Plan
-        if: github.event_name == 'pull_request'
-        run: terraform show -no-color tfplan > plan.txt
+    - run: terraform fmt -recursive
 
-      - name: Comment Plan
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          path: plan.txt
+    - run: terraform validate
+      working-directory: ${{ steps.env.outputs.dir }}
 
-      # APPLY (push or manual)
-      - name: Terraform Apply
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
-        run: terraform apply -auto-approve
+    # Security scan
+    - name: Checkov Scan
+      uses: bridgecrewio/checkov-action@v12
+      with:
+        directory: .
+        soft_fail: true
 
-      # DESTROY (manual only)
-      - name: Terraform Destroy
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-        run: terraform destroy -auto-approve
+    # Terraform plan (PR only)
+    - name: Terraform Plan
+      if: github.event_name == 'pull_request'
+      run: terraform plan -no-color > plan.txt
+      working-directory: ${{ steps.env.outputs.dir }}
+
+    # Comment Terraform plan
+    - name: Comment Plan
+      if: github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        path: ${{ steps.env.outputs.dir }}/plan.txt
+
+    # Infracost (For known infra cost)
+    # - name: Setup Infracost
+    #   if: github.event_name == 'pull_request'
+    #   uses: infracost/actions/setup@v2
+
+    # - name: Infracost Breakdown
+    #   if: github.event_name == 'pull_request'
+    #   run: |
+    #     infracost breakdown \
+    #       --path=${{ steps.env.outputs.dir }} \
+    #       --format=json \
+    #       --out-file=infracost.json
+
+    # - name: Infracost Comment
+    #   if: github.event_name == 'pull_request'
+    #   run: |
+    #     infracost comment github \
+    #       --path=infracost.json \
+    #       --repo=$GITHUB_REPOSITORY \
+    #       --github-token=${{ secrets.GITHUB_TOKEN }} \
+    #       --pull-request=${{ github.event.pull_request.number }}
+    #   env:
+    #     INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+
+    # Apply (push only)
+    - name: Terraform Apply
+      if: github.event_name == 'push'
+      run: terraform apply -auto-approve
+      working-directory: ${{ steps.env.outputs.dir }}
