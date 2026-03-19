@@ -84,6 +84,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug PR source
+        run: |
+          echo "event: ${{ github.event_name }}"
+          echo "is fork: ${{ github.event.pull_request.head.repo.fork }}"
+          
       # Debug OIDC availability
       - name: Debug OIDC availability
         run: |
