@@ -2,12 +2,12 @@
 # Security Group
 # -------------------
 # ALB SG (public)
-resource "aws_security_group" "pbl_alb" {
+resource "aws_security_group" "alb_sg" {
   name   = "${var.tags.project}-${var.tags.environment}-alb-sg"
   vpc_id = aws_vpc.pbl_vpc.id
 
   ingress {
-    description = "HTTP"
+    description = "HTTP from internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -15,7 +15,7 @@ resource "aws_security_group" "pbl_alb" {
   }
 
   ingress {
-    description = "HTTPS"
+    description = "HTTPS from internet"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -26,7 +26,7 @@ resource "aws_security_group" "pbl_alb" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.pbl_vpc.cidr_block]
   }
 
   tags = merge(var.tags, {
@@ -35,16 +35,16 @@ resource "aws_security_group" "pbl_alb" {
 }
 
 # App SG (private)
-resource "aws_security_group" "pbl_app" {
+resource "aws_security_group" "pbl_app_sg" {
   name   = "${var.tags.project}-${var.tags.environment}-app-sg"
   vpc_id = aws_vpc.pbl_vpc.id
 
   ingress {
-    description     = "Allow from ALB"
+    description     = "Allow traffic from ALB only"
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
-    security_groups = [aws_security_group.pbl_alb.id]
+    security_groups = [aws_security_group.alb_sg.id]
   }
 
   egress {
