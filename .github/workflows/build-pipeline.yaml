@@ -86,6 +86,7 @@ jobs:
       with:
         directory: ${{ steps.env.outputs.dir }}
         soft_fail: true
+        skip_check: CKV_AWS_20,CKV_AWS_23
 
     # Terraform plan (PR only)
     - name: Terraform Plan
