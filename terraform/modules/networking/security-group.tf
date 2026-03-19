@@ -70,9 +70,7 @@ resource "aws_security_group" "pbl_app_sg" {
 # restrict the default security group
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.pbl_vpc.id
-
-  description = "Default security group with no inbound or outbound traffic"
-
+  
   # No ingress rules
 
   # Restrict egress (you can make this even stricter if needed)
