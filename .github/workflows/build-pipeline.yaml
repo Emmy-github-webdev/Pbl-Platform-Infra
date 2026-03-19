@@ -95,9 +95,15 @@ jobs:
           echo "TOKEN TOKEN: $ACTIONS_ID_TOKEN_REQUEST_TOKEN"
 
       # Debug role
-      - name: Debug role
+      - name: Debug role values
         run: |
-          echo "ROLE=${{ steps.env.outputs.role }}"
+          echo "DEV role: ${AWS_ROLE_DEV:+SET}"
+          echo "STAGING role: ${AWS_ROLE_STAGING:+SET}"
+          echo "PROD role: ${AWS_ROLE_PROD:+SET}"
+        env:
+          AWS_ROLE_DEV: ${{ secrets.AWS_ROLE_DEV }}
+          AWS_ROLE_STAGING: ${{ secrets.AWS_ROLE_STAGING }}
+          AWS_ROLE_PROD: ${{ secrets.AWS_ROLE_PROD }}
 
       # AWS OIDC login
       - name: Configure AWS Credentials (OIDC)
