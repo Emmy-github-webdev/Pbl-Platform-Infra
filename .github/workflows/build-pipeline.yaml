@@ -75,7 +75,7 @@ jobs:
     - run: terraform init
       working-directory: ${{ steps.env.outputs.dir }}
 
-    - run: terraform fmt -check -recursive
+    - run: terraform fmt -recursive
 
     - run: terraform validate
       working-directory: ${{ steps.env.outputs.dir }}

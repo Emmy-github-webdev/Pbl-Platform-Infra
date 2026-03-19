@@ -1,10 +1,14 @@
 # -------------------
 # Security Group
 # -------------------
+
 # ALB SG (public)
+
+# checkov:skip=CKV_AWS_260: Public ALB requires HTTP/HTTPS from internet
 resource "aws_security_group" "alb_sg" {
-  name   = "${var.tags.project}-${var.tags.environment}-alb-sg"
-  vpc_id = aws_vpc.pbl_vpc.id
+  description = "Security group for public Application Load Balancer"
+  name        = "${var.tags.project}-${var.tags.environment}-alb-sg"
+  vpc_id      = aws_vpc.pbl_vpc.id
 
   ingress {
     description = "HTTP from internet"
@@ -35,9 +39,11 @@ resource "aws_security_group" "alb_sg" {
 }
 
 # App SG (private)
+# checkov:skip=CKV2_AWS_5: SG is attached dynamically outside Terraform
 resource "aws_security_group" "pbl_app_sg" {
-  name   = "${var.tags.project}-${var.tags.environment}-app-sg"
-  vpc_id = aws_vpc.pbl_vpc.id
+  description = "Security group for application backend instances"
+  name        = "${var.tags.project}-${var.tags.environment}-app-sg"
+  vpc_id      = aws_vpc.pbl_vpc.id
 
   ingress {
     description     = "Allow traffic from ALB only"
@@ -58,4 +64,27 @@ resource "aws_security_group" "pbl_app_sg" {
   tags = merge(var.tags, {
     Name = "${var.tags.project}-${var.tags.environment}-app-sg"
   })
+}
+
+
+# restrict the default security group
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.pbl_vpc.id
+
+  description = "Default security group with no inbound or outbound traffic"
+
+  # No ingress rules
+
+  # Restrict egress (you can make this even stricter if needed)
+  egress {
+    description = "Allow no outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["127.0.0.1/32"]
+  }
+
+  tags = {
+    Name = "default-restricted"
+  }
 }
