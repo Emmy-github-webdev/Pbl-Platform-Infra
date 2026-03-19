@@ -93,13 +93,13 @@ jobs:
       # Debug role
       - name: Debug role
         run: |
-          echo "ROLE=${{ needs.setup.outputs.role }}"
+          echo "ROLE=${{ steps.env.outputs.role }}"
 
       # AWS OIDC login
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ needs.setup.outputs.role }}
+          role-to-assume: ${{ steps.env.outputs.role }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-${{ github.run_id }}
 
