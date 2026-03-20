@@ -14,7 +14,7 @@ resource "aws_kms_key" "logs" {
         Sid: "Enable IAM User Permissions",
         Effect: "Allow",
         Principal: {
-          AWS: "arn:aws:iam::${data.aws_caller_identity.current.name}:root"
+          AWS: "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         },
         "Action": [
           "kms:Create*",
@@ -36,7 +36,7 @@ resource "aws_kms_key" "logs" {
         Sid: "Allow CloudWatch Logs",
         Effect: "Allow",
         Principal: {
-          Service: "logs.${data.aws_region.current}.amazonaws.com"
+          Service: "logs.${data.aws_region.current.name}.amazonaws.com"
         },
         Action: [
           "kms:Encrypt",
