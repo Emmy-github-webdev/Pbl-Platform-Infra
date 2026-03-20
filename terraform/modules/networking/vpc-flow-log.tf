@@ -3,6 +3,7 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   name              = "/aws/vpc/flow-logs/${var.tags.project}-${var.tags.environment}"
   retention_in_days = 365
   kms_key_id = aws_kms_key.logs.arn
+  depends_on = [aws_kms_key.logs]
 }
 
 resource "aws_iam_role" "flow_logs_role" {
@@ -36,11 +37,11 @@ resource "aws_iam_role_policy" "flow_logs_policy" {
         "${aws_cloudwatch_log_group.vpc_flow_logs.arn}",
         "${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"
       ]
-      # Condition = {
-      #   ArnLike = {
-      #     "aws:SourceArn" = aws_cloudwatch_log_group.vpc_flow_logs.arn
-      #   }
-      # }
+      Condition = {
+        ArnLike = {
+          "aws:SourceArn" = aws_cloudwatch_log_group.vpc_flow_logs.arn
+        }
+      }
     }]
   })
 }
