@@ -16,3 +16,18 @@ module "vpc" {
   public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnets = ["10.0.11.0/24", "10.0.12.0/24"]
 }
+
+# Kubernetes module
+module "eks" {
+  source = "../../modules/kubernetes-cluster"
+  tags = module.tags.common_tags
+  private_subnet_ids = module.vpc.private_subnets
+  kms_key_arn = module.vpc.kms_key
+  capacity_type = var.instance_capacity_type
+  instance_types = var.instance_types
+  desired_size = var.desired_size
+  min_size = var.min_size
+  max_size = var.max_size
+  ami_type = var.ami_type
+  disk_size = var.disk_size
+}

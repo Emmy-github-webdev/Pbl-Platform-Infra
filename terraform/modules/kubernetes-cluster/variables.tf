@@ -14,3 +14,37 @@ variable "kms_key_arn" {
   type = string
 }
 
+variable "capacity_type" {
+  description = "The instance capacity"
+  type = string
+}
+
+variable "instance_types" {
+  description = "The instance type"
+  type = string
+}
+
+variable "desired_size" {
+  description = "The instance size"
+  type = number
+}
+
+variable "min_size" {
+  description = "The minimum instance size"
+  type = number
+}
+
+variable "max_size" {
+  description = "The minimum instance size"
+  type = number
+}
+
+variable "ami_type" {
+  description = "The AMI type"
+  type = string
+}
+
+variable "disk_size" {
+  description = "The size of the disk"
+  type = number
+}
