@@ -101,30 +101,6 @@ jobs:
       with:
         path: ${{ steps.env.outputs.dir }}/plan.txt
 
-    # Infracost (For known infra cost)
-    # - name: Setup Infracost
-    #   if: github.event_name == 'pull_request'
-    #   uses: infracost/actions/setup@v2
-
-    # - name: Infracost Breakdown
-    #   if: github.event_name == 'pull_request'
-    #   run: |
-    #     infracost breakdown \
-    #       --path=${{ steps.env.outputs.dir }} \
-    #       --format=json \
-    #       --out-file=infracost.json
-
-    # - name: Infracost Comment
-    #   if: github.event_name == 'pull_request'
-    #   run: |
-    #     infracost comment github \
-    #       --path=infracost.json \
-    #       --repo=$GITHUB_REPOSITORY \
-    #       --github-token=${{ secrets.GITHUB_TOKEN }} \
-    #       --pull-request=${{ github.event.pull_request.number }}
-    #   env:
-    #     INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
-
     # Apply (push only)
     - name: Terraform Apply
       if: github.event_name == 'push'
