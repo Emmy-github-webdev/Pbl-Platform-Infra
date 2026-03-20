@@ -7,6 +7,7 @@ resource "aws_eks_cluster" "pbl_cluster" {
     subnet_ids              = var.private_subnet_ids
     endpoint_public_access  = false
     endpoint_private_access = true
+    security_group_ids = [aws_security_group.eks_cluster_sg.id]
   }
 
   enabled_cluster_log_types = [

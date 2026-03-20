@@ -57,3 +57,9 @@ variable "disk_size" {
   type = number
   default = 100
 }
+
+variable "ssh_key" {
+  default = "monitstackkey"
+  type = string
+  description = "The SSH Key name"
+}

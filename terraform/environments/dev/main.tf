@@ -30,4 +30,6 @@ module "eks" {
   max_size = var.max_size
   ami_type = var.ami_type
   disk_size = var.disk_size
+  vpc = module.vpc.vpc_id
+  ssh_key_name = var.ssh_key
 }

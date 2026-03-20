@@ -48,3 +48,13 @@ variable "disk_size" {
   description = "The size of the disk"
   type = number
 }
+
+variable "vpc" {
+  description = "The VPC"
+  type = string
+}
+
+variable "ssh_key_name" {
+  type = string
+  description = "The SSH Key name"
+}
