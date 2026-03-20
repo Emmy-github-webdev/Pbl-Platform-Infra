@@ -15,7 +15,35 @@ resource "aws_lb" "app_alb" {
     enabled = true
     prefix  = "alb"
   }
+  depends_on = [aws_s3_bucket_policy.lb_logs_policy]
+}
 
+resource "aws_s3_bucket_policy" "lb_logs_policy" {
+  bucket = aws_s3_bucket.lb_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid: "AWSLoadBalancerWrite",
+        Effect: "Allow",
+        Principal: {
+          Service: "logdelivery.elasticloadbalancing.amazonaws.com"
+        },
+        Action: "s3:PutObject",
+        Resource: "${aws_s3_bucket.lb_logs.arn}/alb/*"
+      },
+      {
+        Sid: "AWSLoadBalancerAclCheck",
+        Effect: "Allow",
+        Principal: {
+          Service: "logdelivery.elasticloadbalancing.amazonaws.com"
+        },
+        Action: "s3:GetBucketAcl",
+        Resource: aws_s3_bucket.lb_logs.arn
+      }
+    ]
+  })
 }
 
 # Associate WAF with ALB
