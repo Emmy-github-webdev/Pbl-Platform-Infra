@@ -37,11 +37,6 @@ resource "aws_iam_role_policy" "flow_logs_policy" {
         "${aws_cloudwatch_log_group.vpc_flow_logs.arn}",
         "${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"
       ]
-      Condition = {
-        ArnLike = {
-          "aws:SourceArn" = aws_cloudwatch_log_group.vpc_flow_logs.arn
-        }
-      }
     }]
   })
 }
@@ -51,4 +46,11 @@ resource "aws_flow_log" "vpc_flow_logs" {
   traffic_type         = "ALL"
   log_destination_type = "cloud-watch-logs"
   iam_role_arn         = aws_iam_role.flow_logs_role.arn
+
+  log_destination = aws_cloudwatch_log_group.vpc_flow_logs.arn
+
+  depends_on = [
+    aws_cloudwatch_log_group.vpc_flow_logs,
+    aws_iam_role_policy.flow_logs_policy
+  ]
 }
