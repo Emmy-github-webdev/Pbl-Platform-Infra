@@ -3,9 +3,6 @@
 # -------------------
 
 # ALB SG (public)
-
-# checkov:skip=CKV_AWS_260: Public ALB requires HTTP/HTTPS from internet
-#checkov:skip=CKV_AWS_260: HTTP (80) is open for redirect to HTTPS
 resource "aws_security_group" "alb_sg" {
   description = "Security group for public Application Load Balancer"
   name        = "${var.tags.project}-${var.tags.environment}-alb-sg"

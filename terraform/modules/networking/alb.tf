@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "lb_logs" {
-  bucket = "my-fullstack-tfstate"
+  bucket = "${var.tags.project}-${var.tags.environment}-alb-log"
 }
 
 resource "aws_lb" "app_alb" {
