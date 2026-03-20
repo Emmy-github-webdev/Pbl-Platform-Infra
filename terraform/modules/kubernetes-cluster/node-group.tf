@@ -2,10 +2,10 @@ resource "aws_eks_node_group" "pbl_nodes" {
   cluster_name    = aws_eks_cluster.pbl_cluster.name
   node_group_name = "${var.tags.project}-${var.tags.environment}-node-group"
   node_role_arn   = aws_iam_role.pbl_nodes_role.arn
-  subnet_ids      = "${var.private_subnet_ids}"
+  subnet_ids      = var.private_subnet_ids
 
   capacity_type  = "${var.capacity_type}"
-  instance_types = "${var.instance_types}"
+  instance_types = var.instance_types
 
   scaling_config {
     desired_size = var.desired_size

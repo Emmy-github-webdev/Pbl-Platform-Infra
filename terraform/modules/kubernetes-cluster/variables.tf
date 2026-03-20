@@ -6,7 +6,7 @@ variable "tags" {
 
 variable "private_subnet_ids" {
   description = "The private subnet ids"
-  type = string
+  type = list(string)
 }
 
 variable "kms_key_arn" {

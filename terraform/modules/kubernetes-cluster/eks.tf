@@ -4,7 +4,7 @@ resource "aws_eks_cluster" "pbl_cluster" {
   version = "1.29"
 
   vpc_config {
-    subnet_ids              = "${var.private_subnet_ids}"
+    subnet_ids              = var.private_subnet_ids
     endpoint_public_access  = false
     endpoint_private_access = true
   }
