@@ -21,7 +21,7 @@ variable "capacity_type" {
 
 variable "instance_types" {
   description = "The instance type"
-  type = string
+  type = list(string)
 }
 
 variable "desired_size" {

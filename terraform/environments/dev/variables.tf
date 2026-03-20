@@ -24,7 +24,7 @@ variable "instance_capacity_type" {
 
 variable "instance_types" {
   description = "Instance type"
-  type = string
+  type = list(string)
   default = ["m6i.large", "m6i.xlarge"]
 }
 
