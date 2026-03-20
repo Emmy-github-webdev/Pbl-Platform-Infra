@@ -1,5 +1,6 @@
 resource "aws_s3_bucket" "lb_logs" {
   bucket = "${var.tags.project}-${var.tags.environment}-alb-log"
+  force_destroy = true
 }
 
 resource "aws_lb" "app_alb" {
