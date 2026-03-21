@@ -33,3 +33,12 @@ module "eks" {
   vpc = module.vpc.vpc_id
   ssh_key_name = var.ssh_key
 }
+
+# ECR module
+module "ecr" {
+  source = "../../modules/registry"
+  tags = module.tags.common_tags
+  vpc = module.vpc.vpc_id
+  eks_node_group_role = module.eks.node_group_role
+  repository_name = var.repository_name
+}

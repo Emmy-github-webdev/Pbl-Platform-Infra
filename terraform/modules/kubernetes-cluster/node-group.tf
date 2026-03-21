@@ -65,19 +65,19 @@ resource "aws_iam_role" "pbl_nodes_role" {
   })
 }
 
-
-
-
+# Nodes register with EKS
 resource "aws_iam_role_policy_attachment" "worker_node_policies" {
   role       = aws_iam_role.pbl_nodes_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
+# Enables pod networking
 resource "aws_iam_role_policy_attachment" "cni_policy" {
   role       = aws_iam_role.pbl_nodes_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
+# Allows pulling images from ECR
 resource "aws_iam_role_policy_attachment" "registry_policy" {
   role       = aws_iam_role.pbl_nodes_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
