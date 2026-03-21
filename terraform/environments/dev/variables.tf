@@ -63,3 +63,9 @@ variable "ssh_key" {
   type = string
   description = "The SSH Key name"
 }
+
+variable "repository_name" {
+  description = "The Image repository name"
+  type = string
+  default = "myapp"
+}
